@@ -1,0 +1,8 @@
+{
+  "name": "slideshow-pages",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node generate-manifest.mjs && rm -rf dist && mkdir -p dist && cp -R photos dist/photos && cp index.html dist/index.html"
+  }
+}
