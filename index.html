@@ -3,15 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Folder Slideshow (Hardcoded ./photos)</title>
+  <title>Folder Slideshow (224×224 resized)</title>
   <style>
     :root{
-      --bg: #0b0f14;
-      --fg: #e9eef5;
-      --muted: #9aa7b1;
-      --accent: #5b9dff;
-      --accent-2: #00d4ff;
-      --card: #121922;
+      --bg: #0b0f14; --fg: #e9eef5; --muted: #9aa7b1; --accent: #5b9dff; --accent-2: #00d4ff; --card: #121922;
     }
     html, body { height: 100%; }
     body{ margin:0; background: radial-gradient(1200px 800px at 75% 10%, #0f1621 0%, #0b0f14 50%, #090c10 100%); color: var(--fg); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; overflow:hidden; }
@@ -24,7 +19,8 @@
 
     .stage{ position:relative; height:100%; display:grid; place-items:center; }
     .img-wrap{ position:relative; height:100%; width:100%; display:grid; place-items:center;}
-    .img{ max-height: 100%; max-width: 100%; object-fit: contain; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.5); transition: opacity .35s ease, transform .4s ease; opacity:0; transform: scale(.985); }
+    /* Note: images shown are the already-resized 224×224 versions, scaled up to fit */
+    .img{ max-height: 100%; max-width: 100%; object-fit: contain; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.5); transition: opacity .35s ease, transform .4s ease; opacity:0; transform: scale(.985); image-rendering:auto; }
     .img.show{ opacity:1; transform: scale(1); }
 
     .controls{ position:absolute; inset:auto 0 1.25rem 0; display:flex; align-items:center; gap:.75rem; justify-content:center; }
@@ -46,28 +42,25 @@
     .drawer{ position:absolute; left:0; right:0; bottom:0; transform: translateY(100%); transition: transform .35s ease; background: rgba(12,18,28,.96); border-top: 1px solid rgba(255,255,255,.08); backdrop-filter: blur(10px); max-height: 40vh; overflow:auto;}
     .drawer.open{ transform: translateY(0); }
     .thumbs{ display:grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap:.5rem; padding: .75rem; }
-    .thumb{ width:100%; aspect-ratio: 16/10; object-fit: cover; border-radius: 10px; cursor:pointer; border:2px solid transparent; transition: border-color .2s ease, transform .15s ease; }
+    .thumb{ width:100%; aspect-ratio: 1 / 1; object-fit: cover; border-radius: 10px; cursor:pointer; border:2px solid transparent; transition: border-color .2s ease, transform .15s ease; }
     .thumb:hover{ transform: translateY(-2px) }
     .thumb.active{ border-color: var(--accent); }
 
-    .empty{ display:grid; place-items:center; text-align:center; gap:1rem; padding: 2rem; color: var(--muted); }
-    .empty .big{ font-size: 1.2rem; color: var(--fg); }
+    .mode{ display:flex; align-items:center; gap:.5rem; color:var(--muted); }
+    .mode label{ display:inline-flex; align-items:center; gap:.35rem; cursor:pointer; }
+    .radio{ accent-color: #5b9dff; }
   </style>
 </head>
 <body>
   <div class="shell">
     <header class="topbar">
-      <strong class="title">Slideshow · ./photos</strong>
+      <strong class="title">Slideshow · ./photos · 224×224</strong>
       <div class="spacer"></div>
-      <button id="toggle-fit" class="btn" title="Toggle fit / cover">
-        <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1zm2 2v8h12V7H6z"/></svg>
-        <span>Fit</span>
-      </button>
-      <button id="shuffle" class="btn" title="Shuffle (S)">
-        <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M17 3h4v4h-2V5h-2V3zM7 3h2v2H7v2H5V3h2zm12 12h2v6h-6v-2h4v-4zM5 17h2v2h2v2H5v-4zM7 9h2l6 6h-2L7 9zm8-4l4 4h-2l-4-4h2zM5 7h2l6 6H11L5 7z"/></svg>
-        <span>Shuffle</span>
-      </button>
-      <span class="hint">Keys: ←/→ navigate, Space play/pause, F fullscreen, T thumbnails</span>
+      <div class="mode" title="How to resize into a square">
+        <label><input type="radio" name="mode" id="mode-cover" class="radio" checked> Cover (crop)</label>
+        <label><input type="radio" name="mode" id="mode-contain" class="radio"> Contain (pad)</label>
+      </div>
+      <button id="rebuild" class="btn" title="Rebuild resized images">Rebuild</button>
     </header>
 
     <main class="stage">
@@ -103,15 +96,16 @@
     </main>
 
     <footer class="bottombar">
-      <div id="status" class="hint">Loading manifest…</div>
+      <div id="status" class="hint">Preparing…</div>
       <div class="progress"><span id="bar"></span></div>
     </footer>
   </div>
 
   <script>
     // === Configuration ===
-    const ROOT = './photos/';             // hardcoded folder on your server
-    const MANIFEST = ROOT + 'manifest.json'; // generated at deploy time (see instructions)
+    const ROOT = './photos/';                 // hardcoded folder on your server
+    const MANIFEST = ROOT + 'manifest.json';  // list of image paths relative to ROOT
+    const SIZE = 224;                         // target size (square)
 
     const viewer = document.getElementById('viewer');
     const prevBtn = document.getElementById('prev');
@@ -124,38 +118,97 @@
     const bar = document.getElementById('bar');
     const thumbsWrap = document.getElementById('thumbs');
     const drawer = document.getElementById('drawer');
-    const toggleFit = document.getElementById('toggle-fit');
-    const shuffleBtn = document.getElementById('shuffle');
     const thumbsToggle = document.getElementById('thumbs-toggle');
     const fullBtn = document.getElementById('full');
+    const rebuildBtn = document.getElementById('rebuild');
+    const modeCover = document.getElementById('mode-cover');
+    const modeContain = document.getElementById('mode-contain');
 
-    let files = []; // {name, url}
-    let index = 0;
-    let timer = null;
-    let coverMode = false; // false = contain, true = cover
+    let files = []; // {name, url} — url points to resized 224×224 blob
+    let originals = []; // original paths from manifest (for rebuilds)
+    let index = 0; let timer = null;
 
     async function loadManifest(){
-      try{
-        const res = await fetch(MANIFEST, {cache:'no-cache'});
-        if(!res.ok) throw new Error('Missing manifest.json in ./photos');
-        const list = await res.json(); // ["a.jpg","sub/x.png",...]
-        if(!Array.isArray(list) || !list.length) throw new Error('manifest.json is empty or invalid');
-        files = list.map(name=>({ name, url: ROOT + name }));
-        buildThumbs();
-        show(0);
-        statusEl.textContent = `${files.length} images loaded from ./photos`;
-      }catch(err){
-        console.error(err);
-        statusEl.innerHTML = `❗ ${err.message}.<br/>Create it with a list of files, e.g. <code>[\"1.jpg\", \"album/2.png\"]</code>`;
+      const res = await fetch(MANIFEST, {cache:'no-cache'});
+      if(!res.ok) throw new Error('Missing manifest.json in ./photos');
+      const list = await res.json();
+      if(!Array.isArray(list) || !list.length) throw new Error('manifest.json is empty or invalid');
+      originals = list; // keep originals
+    }
+
+    function drawResized(img, size, mode){
+      const c = document.createElement('canvas');
+      c.width = size; c.height = size;
+      const ctx = c.getContext('2d');
+      // background padding color when using contain
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0,0,size,size);
+      const iw = img.naturalWidth || img.width; const ih = img.naturalHeight || img.height;
+      let scale, w, h, dx, dy;
+      if(mode === 'cover'){
+        scale = Math.max(size / iw, size / ih);
+      } else {
+        scale = Math.min(size / iw, size / ih);
       }
+      w = Math.round(iw * scale); h = Math.round(ih * scale);
+      dx = Math.round((size - w) / 2); dy = Math.round((size - h) / 2);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, dx, dy, w, h);
+      return c;
+    }
+
+    function resizeURLToBlobURL(url, size, mode){
+      return new Promise((resolve, reject)=>{
+        const img = new Image();
+        img.onload = ()=>{
+          try{
+            const canvas = drawResized(img, size, mode);
+            canvas.toBlob(b=>{
+              if(!b) return reject(new Error('Failed to create blob'));
+              resolve(URL.createObjectURL(b));
+            }, 'image/jpeg', 0.9);
+          }catch(e){ reject(e); }
+        };
+        img.onerror = ()=> reject(new Error('Failed to load '+url));
+        img.decoding = 'async';
+        img.src = url;
+      });
+    }
+
+    async function buildResized(){
+      files.forEach(f=>{ if(f._tmp){ URL.revokeObjectURL(f.url); } });
+      files = [];
+      const mode = modeCover.checked ? 'cover' : 'contain';
+      statusEl.textContent = `Resizing ${originals.length} images to ${SIZE}×${SIZE} (${mode})…`;
+      let done = 0;
+      const concurrency = 4; // limit parallel work
+      const queue = [...originals];
+      const workers = new Array(concurrency).fill(0).map(async ()=>{
+        while(queue.length){
+          const name = queue.shift();
+          const url = ROOT + name;
+          try{
+            const blobUrl = await resizeURLToBlobURL(url, SIZE, mode);
+            files.push({ name, url: blobUrl, _tmp: true });
+          }catch(e){ console.warn(e); }
+          done++;
+          statusEl.textContent = `Resized ${done}/${originals.length}`;
+          bar.style.width = `${(done/originals.length)*100}%`;
+        }
+      });
+      await Promise.all(workers);
+      files.sort((a,b)=> a.name.localeCompare(b.name, undefined, {numeric:true, sensitivity:'base'}));
+      bar.style.width = '0%';
+      if(files.length){ buildThumbs(); show(0); statusEl.textContent = `${files.length} images ready (224×224)`; }
+      else { statusEl.textContent = 'No images resized.'; }
     }
 
     function buildThumbs(){
       thumbsWrap.innerHTML = '';
       files.forEach((f,i)=>{
         const img = document.createElement('img');
-        img.src = f.url; img.className = 'thumb'; img.title = f.name;
-        img.loading = 'lazy';
+        img.src = f.url; img.className = 'thumb'; img.title = f.name; img.loading = 'lazy';
         img.addEventListener('click', ()=> { show(i); });
         thumbsWrap.appendChild(img);
       });
@@ -163,9 +216,7 @@
     }
 
     function markActiveThumb(){
-      Array.from(thumbsWrap.children).forEach((el,i)=>{
-        el.classList.toggle('active', i === index);
-      });
+      Array.from(thumbsWrap.children).forEach((el,i)=>{ el.classList.toggle('active', i === index); });
     }
 
     function show(i){
@@ -177,11 +228,9 @@
         viewer.src = current.url;
         viewer.onload = ()=> viewer.classList.add('show');
       }, 40);
-      statusEl.textContent = `${index+1} / ${files.length} — ${current.name}`;
-      bar.style.width = `${((index+1)/files.length)*100}%`;
+      statusEl.textContent = `${index+1} / ${files.length} — ${current.name} (224×224)`;
       markActiveThumb();
-      const next = new Image();
-      next.src = files[(index+1)%files.length].url;
+      const next = new Image(); next.src = files[(index+1)%files.length].url;
     }
 
     function next(){ show(index+1); }
@@ -200,47 +249,38 @@
 
     function toggleDrawer(){ drawer.classList.toggle('open'); }
 
-    function toggleFitMode(){
-      coverMode = !coverMode;
-      viewer.style.objectFit = coverMode ? 'cover' : 'contain';
-      toggleFit.querySelector('span').textContent = coverMode ? 'Cover' : 'Fit';
-      toggleFit.title = coverMode ? 'Images fill the screen (cover)' : 'Images fit inside (contain)';
-    }
-
-    function shuffle(){
-      if(!files.length) return;
-      for(let i=files.length-1;i>0;i--){
-        const j = Math.floor(Math.random()*(i+1));
-        [files[i], files[j]] = [files[j], files[i]];
-      }
-      buildThumbs();
-      show(0);
-    }
-
     // Wire up UI
     prevBtn.addEventListener('click', prev);
     nextBtn.addEventListener('click', next);
     playBtn.addEventListener('click', ()=> timer?stop():play());
     speed.addEventListener('input', ()=>{ if(timer){ clearTimeout(timer); tick(); } });
     thumbsToggle.addEventListener('click', toggleDrawer);
-    toggleFit.addEventListener('click', toggleFitMode);
-    shuffleBtn.addEventListener('click', shuffle);
     fullBtn.addEventListener('click', ()=>{
       const el = document.documentElement;
       if(!document.fullscreenElement){ el.requestFullscreen?.(); } else { document.exitFullscreen?.(); }
     });
+    rebuildBtn.addEventListener('click', buildResized);
 
+    // Keyboard
     window.addEventListener('keydown', (e)=>{
       if(e.key === 'ArrowRight'){ next(); }
       else if(e.key === 'ArrowLeft'){ prev(); }
       else if(e.code === 'Space'){ e.preventDefault(); timer?stop():play(); }
       else if(e.key === 'f' || e.key === 'F'){ fullBtn.click(); }
       else if(e.key === 't' || e.key === 'T'){ toggleDrawer(); }
-      else if(e.key === 's' || e.key === 'S'){ shuffle(); }
+      else if(e.key === 'r' || e.key === 'R'){ buildResized(); }
     });
 
     // Start
-    loadManifest();
+    (async()=>{
+      try{
+        await loadManifest();
+        await buildResized();
+      }catch(err){
+        console.error(err);
+        statusEl.textContent = 'Error: ' + err.message;
+      }
+    })();
   </script>
 </body>
 </html>
